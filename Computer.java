@@ -18,8 +18,9 @@ public class Computer {
     int rocketsInProgress = 0;
     int rocketCount = 0;
     Map<Integer, Integer> workersWorkingOnStructure; // worker id -> structure id
-    ArrayList<MapLocation> kryptoniteLocations;
+    ArrayList<MapLocation> karboniteLocations;
     ArrayList<Integer> structuresInProgress;
+    ArrayList<Unit> enemyUnits;
     Computer() {
         mainLoop();
     }
@@ -30,12 +31,24 @@ public class Computer {
             VecUnit units = gc.myUnits();
             for (int i = 0; i < units.size(); i++) {
                 Unit unit = units.get(i);
+                gc.karboniteAt(new MapLocation(Planet.Earth, 1, 1)); // find karbonite
+                gc.senseNearbyUnitsByTeam(new PlanetMap().getWidth(), oppositeTeam // use gc.units() instead
+
                 switch (unit.unitType()) {
                     case Worker:
                         if (!workerTaskMap.containsKey(unit.id())) {
                             workerTaskMap.put(unit.id(), getNewWorkerTask(unit));
                         }
-                        //if (gc.get)
+                        switch (workerTaskMap.get(unit.id())) {
+                            case HARVEST:
+                                break;
+                            case START_BUILD_FACTORY:
+                                break;
+                            case START_BUILD_ROCKET:
+                                break;
+                            case BUILD:
+                                break;
+                        }
                         break;
                     case Knight:
                         break;
