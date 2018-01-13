@@ -5,16 +5,21 @@ import java.util.Map;
 
 public class Computer {
 
+    private static final double WORKER_BUILD_RANGE_SQUARED = 100;
     final long KARBONITE_SHORTAGE = 50;
     final double FACTORY_SHORTAGE_COEFF = .01; // every 100 rounds, a new factory will be prioritized
-    final int MAX_STRUCTURES_IN_PROGRESS_AT_ONCE = 2;
+    final double ROCKET_SHORTAGE_COEFF = .0066; // every ~150 rounds, a new factory will be prioritized
+    //final int MAX_STRUCTURES_IN_PROGRESS_AT_ONCE = 2;
 
-    Direction[] directions = Direction.values();
     GameController gc = new GameController();
     Map<Integer, WorkerTask> workerTaskMap;
     int factoriesInProgress = 0;
     int factoryCount = 0;
-    Map<Integer, ArrayList<Integer>> workersWorkingOnStructure;
+    int rocketsInProgress = 0;
+    int rocketCount = 0;
+    Map<Integer, Integer> workersWorkingOnStructure; // worker id -> structure id
+    ArrayList<MapLocation> kryptoniteLocations;
+    ArrayList<Integer> structuresInProgress;
     Computer() {
         mainLoop();
     }
@@ -30,7 +35,7 @@ public class Computer {
                         if (!workerTaskMap.containsKey(unit.id())) {
                             workerTaskMap.put(unit.id(), getNewWorkerTask(unit));
                         }
-                        if (gc.get)
+                        //if (gc.get)
                         break;
                     case Knight:
                         break;
@@ -66,7 +71,16 @@ public class Computer {
         if (gc.round() * FACTORY_SHORTAGE_COEFF < factoryCount + factoriesInProgress) {
             return WorkerTask.START_BUILD_FACTORY; // later needs to inc factoriesInProgress
         }
-        if (gc.senseNearbyUnitsByType(unit.location().mapLocation(), )) // if nearby factory in progress, build it - maybe make this a map with locations of stuff in progress so we dont have to requery?
+        if (gc.round() * ROCKET_SHORTAGE_COEFF < rocketCount + rocketsInProgress) {
+            return WorkerTask.START_BUILD_FACTORY; // later needs to inc factoriesInProgress
+        }
+        for (int i = 0; i < structuresInProgress.size(); i++) {
+            Integer structureInProgress = structuresInProgress.get(i);
+            if (unit.location().mapLocation().distanceSquaredTo(gc.unit(structureInProgress).location().mapLocation()) < WORKER_BUILD_RANGE_SQUARED) {
+                workersWorkingOnStructure.put(unit.id(), structureInProgress);
+                return WorkerTask.BUILD;
+            }
+        }
         return WorkerTask.HARVEST;
     }
 
