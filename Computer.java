@@ -2,6 +2,7 @@ import bc.*;
 
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.HashMap;
 
 public class Computer {
 
@@ -14,15 +15,16 @@ public class Computer {
     final long DANGEROUS_RANGE_SQUARED_WORKER = 100;
 
     GameController gc = new GameController();
-    Map<Integer, WorkerTask> workerTaskMap;
     int factoriesInProgress = 0;
     int factoryCount = 0;
     int rocketsInProgress = 0;
     int rocketCount = 0;
-    Map<Integer, Integer> workersWorkingOnStructure; // worker id -> structure id
-    ArrayList<MapLocation> gettableKarboniteLocations;
-    ArrayList<Integer> structuresInProgress;
-    Map<Integer, Unit> enemyUnits;
+    Map<Integer, WorkerTask> workerTaskMap = new HashMap<>();
+    Map<Integer, Integer> workersWorkingOnStructure = new HashMap<>(); // worker id -> structure id
+    ArrayList<MapLocation> gettableKarboniteLocations = new ArrayList<>();
+    ArrayList<Integer> structuresInProgress = new ArrayList<>();
+    Map<Integer, Unit> enemyUnits = new HashMap<>();
+    Map<Integer, MapLocation> targetLocations = new HashMap<>();
     Computer() {
         init();
         while (true) {
@@ -56,25 +58,29 @@ public class Computer {
 
             switch (unit.unitType()) {
                 case Worker:
-                    if (!workerTaskMap.containsKey(unit.id())) {
-                        workerTaskMap.put(unit.id(), getNewWorkerTask(unit));
-                    }
                     int enemyID = -1;
                     if ((enemyID = isEnemyUnitInRange(unit, DANGEROUS_RANGE_SQUARED_WORKER)) != -1) {
                         moveDir = opposite(unit.location().mapLocation().directionTo(enemyUnits.get(enemyID).location().mapLocation()));
                         break;
                     }
-                    // temp
-                    moveDir = Direction.Northeast;
-                    switch (workerTaskMap.get(unit.id())) {
-                        case HARVEST:
-                            break;
-                        case START_BUILD_FACTORY:
-                            break;
-                        case START_BUILD_ROCKET:
-                            break;
-                        case BUILD:
-                            break;
+                    if (!workerTaskMap.containsKey(unit.id())) {
+                        workerTaskMap.put(unit.id(), getNewWorkerTask(unit));
+                    }
+                    if (!targetLocations.containsKey(unit.id())) {
+                        // at destination
+                        switch (workerTaskMap.get(unit.id())) {
+                            case HARVEST:
+                                break;
+                            case START_BUILD_FACTORY:
+                                break;
+                            case START_BUILD_ROCKET:
+                                break;
+                            case BUILD:
+                                break;
+                        }
+                    }
+                    else {
+                        moveDir = unit.location().mapLocation().directionTo(targetLocations.get(unit.id()));
                     }
                     break;
                 case Knight:
@@ -97,6 +103,12 @@ public class Computer {
             // Most methods on gc take unit IDs, instead of the unit objects themselves.
             if (gc.isMoveReady(unit.id()) && gc.canMove(unit.id(), moveDir)) {
                 gc.moveRobot(unit.id(), moveDir);
+                if (targetLocations.containsKey(unit.id())) {
+                    // if he has made it to his target location, remove his target location
+                    if (unit.location().mapLocation().equals(targetLocations.get(unit.id()))) {
+                        targetLocations.remove(unit.id());
+                    }
+                }
             }
         }
         // Submit the actions we've done, and wait for our next turn.
@@ -165,5 +177,8 @@ public class Computer {
             default:
                 return Direction.Center;
         }
+    }
+    void debug(String num) {
+        System.out.println("DEBUG " + num);
     }
 }
