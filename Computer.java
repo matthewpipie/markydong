@@ -1,11 +1,9 @@
 import bc.*;
 
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.HashMap;
+import java.util.*;
 
 public class Computer {
-
+    static Random rand = new Random();
     final long WORKER_BUILD_RANGE_SQUARED = 100;
     final long KARBONITE_SHORTAGE = 50;
     final double FACTORY_SHORTAGE_COEFF = .01; // every 100 rounds, a new factory will be prioritized
@@ -24,7 +22,7 @@ public class Computer {
     ArrayList<MapLocation> gettableKarboniteLocations = new ArrayList<>();
     ArrayList<Integer> structuresInProgress = new ArrayList<>();
     Map<Integer, Unit> enemyUnits = new HashMap<>();
-    Map<Integer, MapLocation> targetLocations = new HashMap<>();
+    Map<Integer, Travel> travels = new HashMap<>();
     Computer() {
         init();
         while (true) {
@@ -50,7 +48,7 @@ public class Computer {
     void mainLoop() {
         System.out.println("Current round: " + gc.round());
         VecUnit units = gc.myUnits();
-        updateEnemyUnits();
+        updateEnemyUnitsAndStructures();
         Direction moveDir;
         for (int i = 0; i < units.size(); i++) {
             Unit unit = units.get(i);
@@ -58,30 +56,7 @@ public class Computer {
 
             switch (unit.unitType()) {
                 case Worker:
-                    int enemyID = -1;
-                    if ((enemyID = isEnemyUnitInRange(unit, DANGEROUS_RANGE_SQUARED_WORKER)) != -1) {
-                        moveDir = opposite(unit.location().mapLocation().directionTo(enemyUnits.get(enemyID).location().mapLocation()));
-                        break;
-                    }
-                    if (!workerTaskMap.containsKey(unit.id())) {
-                        workerTaskMap.put(unit.id(), getNewWorkerTask(unit));
-                    }
-                    if (!targetLocations.containsKey(unit.id())) {
-                        // at destination
-                        switch (workerTaskMap.get(unit.id())) {
-                            case HARVEST:
-                                break;
-                            case START_BUILD_FACTORY:
-                                break;
-                            case START_BUILD_ROCKET:
-                                break;
-                            case BUILD:
-                                break;
-                        }
-                    }
-                    else {
-                        moveDir = unit.location().mapLocation().directionTo(targetLocations.get(unit.id()));
-                    }
+                    moveDir = worker(unit);
                     break;
                 case Knight:
                     break;
@@ -103,16 +78,138 @@ public class Computer {
             // Most methods on gc take unit IDs, instead of the unit objects themselves.
             if (gc.isMoveReady(unit.id()) && gc.canMove(unit.id(), moveDir)) {
                 gc.moveRobot(unit.id(), moveDir);
-                if (targetLocations.containsKey(unit.id())) {
-                    // if he has made it to his target location, remove his target location
-                    if (unit.location().mapLocation().equals(targetLocations.get(unit.id()))) {
-                        targetLocations.remove(unit.id());
+                if (travels.containsKey(unit.id())) {
+                    // if he has made it to his target location, set it that way
+                    if (unit.location().mapLocation().equals(travels.get(unit.id()).destination) && travels.get(unit.id()).status != TravelStatus.AT_DESTINATION) {
+                        Travel temp = travels.get(unit.id());
+                        temp.status = TravelStatus.AT_DESTINATION;
+                        travels.put(unit.id(), temp);
                     }
                 }
             }
         }
+
         // Submit the actions we've done, and wait for our next turn.
         gc.nextTurn();
+    }
+
+    private Direction worker(Unit unit) {
+        Direction ret = Direction.Center;
+        int enemyID = -1;
+        // if enemy, run away
+        if ((enemyID = isEnemyUnitInRange(unit, DANGEROUS_RANGE_SQUARED_WORKER)) != -1) {
+            return opposite(unit.location().mapLocation().directionTo(enemyUnits.get(enemyID).location().mapLocation()));
+        }
+        // give workers a job, status, and destination
+        if (!workerTaskMap.containsKey(unit.id())) {
+            giveNewWorkerJob(unit);
+        }
+        switch (travels.get(unit.id()).status) {
+            case IN_PROGRESS:
+                ret = unit.location().mapLocation().directionTo(travels.get(unit.id()).destination);
+                break;
+            case AT_DESTINATION:
+                switch (workerTaskMap.get(unit.id())) {
+                    case HARVEST:
+                        if (gc.canHarvest(unit.id(), travels.get(unit.id()).directionOfInterest)) {
+                            gc.harvest(unit.id(), travels.get(unit.id()).directionOfInterest);
+                        }
+                        if (gc.karboniteAt(travels.get(unit.id()).pointOfInterest()) < 0.1) {
+                            giveNewWorkerJob(unit);
+                            return worker(unit);
+                        }
+                        break;
+                    case START_BUILD_FACTORY:
+                        if (gc.canBlueprint(unit.id(), UnitType.Factory, travels.get(unit.id()).directionOfInterest)) {
+                            gc.blueprint(unit.id(), UnitType.Factory, travels.get(unit.id()).directionOfInterest);
+                            workerTaskMap.put(unit.id(), WorkerTask.BUILD);
+                        }
+                        break;
+                    case START_BUILD_ROCKET:
+                        if (gc.canBlueprint(unit.id(), UnitType.Rocket, travels.get(unit.id()).directionOfInterest)) {
+                            gc.blueprint(unit.id(), UnitType.Rocket, travels.get(unit.id()).directionOfInterest);
+                            workerTaskMap.put(unit.id(), WorkerTask.BUILD);
+                        }
+                    case BUILD:
+                        Unit thingToBuild = gc.senseUnitAtLocation(travels.get(unit.id()).pointOfInterest());
+                        if (gc.canBuild(unit.id(), thingToBuild.id())) {
+                            gc.build(unit.id(), thingToBuild.id());
+                        }
+                        if (thingToBuild.structureIsBuilt() > 0.5) { // dont know why it returns a short but 0=false, 1=true
+                            giveNewWorkerJob(unit);
+                            return worker(unit);
+                        }
+                        break;
+                }
+                break;
+            case NEEDS_NEW_JOB:
+                giveNewWorkerJob(unit);
+                return worker(unit);
+        }
+
+        return ret;
+    }
+
+    private void giveNewWorkerJob(Unit worker) {
+        workerTaskMap.put(worker.id(), getNewWorkerTask(worker));
+        travels.put(worker.id(), getWorkerTravel(worker));
+    }
+
+    private Direction getRandomDir(Boolean center) {
+        ArrayList<Direction> values2 = new ArrayList<Direction>(Arrays.asList(Direction.values()));
+        if (!center) {
+            values2.remove(Direction.Center);
+        }
+        return values2.get(rand.nextInt(values2.size()));
+    }
+
+    private Travel getWorkerTravel(Unit worker) {
+        Travel ret = new Travel();
+        ret.status = TravelStatus.IN_PROGRESS;
+        switch (workerTaskMap.get(worker.id())) {
+            case HARVEST:
+                int smallestIndex = 0;
+                for (int i = 0; i < gettableKarboniteLocations.size(); i++) {
+                    if (gettableKarboniteLocations.get(i).distanceSquaredTo(worker.location().mapLocation()) <
+                            gettableKarboniteLocations.get(smallestIndex).distanceSquaredTo(worker.location().mapLocation())) {
+                        smallestIndex = i;
+                    }
+                }
+                ret.directionOfInterest = getRandomDir(false);
+                ret.destination = gettableKarboniteLocations.get(smallestIndex).addMultiple(opposite(ret.directionOfInterest), 1);
+                break;
+            case START_BUILD_FACTORY:
+            case START_BUILD_ROCKET:
+                MapLocation loc = worker.location().mapLocation();
+                Direction dirT = findOpenDirectionToSpace(loc);
+                ret.directionOfInterest = opposite(dirT);
+                ret.destination = loc.addMultiple(dirT, 1);
+                break;
+            case BUILD:
+                int closestIndex = 0;
+                for (int i = 0; i < structuresInProgress.size(); i++) {
+                    if (gc.unit(structuresInProgress.get(i)).location().mapLocation().distanceSquaredTo(worker.location().mapLocation()) <
+                            gc.unit(structuresInProgress.get(closestIndex)).location().mapLocation().distanceSquaredTo(worker.location().mapLocation())) {
+                        closestIndex = i;
+                    }
+                }
+                MapLocation loc2 = gc.unit(structuresInProgress.get(closestIndex)).location().mapLocation();
+                Direction dirT2 = findOpenDirectionToSpace(loc2);
+                ret.directionOfInterest = opposite(dirT2);
+                ret.destination = loc2.addMultiple(dirT2, 1);
+                break;
+        }
+        return ret;
+    }
+
+    private Direction findOpenDirectionToSpace(MapLocation space) {
+        MapLocation locT;
+        Direction dirT;
+        do {
+            dirT = getRandomDir(false);
+            locT = space.addMultiple(dirT, 1);
+        } while (gc.startingMap(gc.planet()).isPassableTerrainAt(locT) > 0.5);
+        return dirT;
     }
 
     private int isEnemyUnitInRange(Unit unit, long rangeSquared) {
@@ -124,11 +221,36 @@ public class Computer {
         return -1;
     }
 
-    private void updateEnemyUnits() {
+    private void updateEnemyUnitsAndStructures() {
+        factoriesInProgress = 0;
+        factoryCount = 0;
+        rocketsInProgress = 0;
+        rocketCount = 0;
         VecUnit units = gc.units();
+        structuresInProgress = new ArrayList<>();
         for (int i = 0; i < units.size(); i++) {
             if (units.get(i).team() != gc.team()) {
                 enemyUnits.put(units.get(i).id(), units.get(i));
+                continue;
+            }
+            if (units.get(i).structureIsBuilt() < 0.5) {
+                structuresInProgress.add(units.get(i).id());
+            }
+            switch (units.get(i).unitType()) {
+                case Factory:
+                    if (units.get(i).structureIsBuilt() < 0.5) {
+                        factoriesInProgress++;
+                    } else {
+                        factoryCount++;
+                    }
+                    break;
+                case Rocket:
+                    if (units.get(i).structureIsBuilt() < 0.5) {
+                        rocketsInProgress++;
+                    } else {
+                        rocketCount++;
+                    }
+                    break;
             }
         }
     }
