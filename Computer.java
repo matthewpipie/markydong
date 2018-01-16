@@ -10,7 +10,7 @@ public class Computer {
     final double ROCKET_SHORTAGE_COEFF = .0066; // every ~150 rounds, a new factory will be prioritized
     //final int MAX_STRUCTURES_IN_PROGRESS_AT_ONCE = 2;
     final long DANGEROUS_RANGE_SQUARED_HEALER = 64;
-    final long DANGEROUS_RANGE_SQUARED_WORKER = 100;
+    final long DANGEROUS_RANGE_SQUARED_WORKER = 16;
 
     GameController gc = new GameController();
     int factoriesInProgress = 0;
@@ -54,9 +54,24 @@ public class Computer {
             Unit unit = units.get(i);
             moveDir = Direction.Center;
 
+            if (travels.containsKey(unit.id())) {
+                if (unit.location().mapLocation().equals(travels.get(unit.id()).destination) && travels.get(unit.id()).status != TravelStatus.AT_DESTINATION) {
+                    Travel temp = travels.get(unit.id());
+                    temp.status = TravelStatus.AT_DESTINATION;
+                    travels.put(unit.id(), temp);
+                }
+            }
+
             switch (unit.unitType()) {
                 case Worker:
+                    if (travels.containsKey(unit.id())) {
+                        Travel t = travels.get(unit.id());
+                        debug(unit.id() + ", " + t.status.toString() + ", " + t.directionOfInterest.toString() + ", " + t.destination.getX() + ", " + t.destination.getY());
+                    } else {
+                        debug(unit.id() + "");
+                    }
                     moveDir = worker(unit);
+                    debug("moved " + moveDir.toString());
                     break;
                 case Knight:
                     break;
@@ -76,14 +91,13 @@ public class Computer {
             }
 
             // Most methods on gc take unit IDs, instead of the unit objects themselves.
-            if (gc.isMoveReady(unit.id()) && gc.canMove(unit.id(), moveDir)) {
-                gc.moveRobot(unit.id(), moveDir);
-                if (travels.containsKey(unit.id())) {
-                    // if he has made it to his target location, set it that way
-                    if (unit.location().mapLocation().equals(travels.get(unit.id()).destination) && travels.get(unit.id()).status != TravelStatus.AT_DESTINATION) {
-                        Travel temp = travels.get(unit.id());
-                        temp.status = TravelStatus.AT_DESTINATION;
-                        travels.put(unit.id(), temp);
+            if (moveDir != Direction.Center) {
+                if (gc.isMoveReady(unit.id())) {
+                    for (int j = 0; j < 8; j++) {
+                        if (gc.canMove(unit.id(), rotateRight(moveDir, (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)))) {
+                            gc.moveRobot(unit.id(), rotateRight(moveDir, (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)));
+                            break;
+                        }
                     }
                 }
             }
@@ -91,6 +105,15 @@ public class Computer {
 
         // Submit the actions we've done, and wait for our next turn.
         gc.nextTurn();
+    }
+
+    private Direction rotateRight(Direction moveDir, int num) {
+        List<Direction> directions = Arrays.asList(Direction.North, Direction.Northeast, Direction.East, Direction.Southeast, Direction.South, Direction.Southwest, Direction.West, Direction.Northwest);
+        int index = (directions.indexOf(moveDir) + num) % directions.size();
+        if (index < 0) {
+            index += directions.size();
+        }
+        return directions.get(index);
     }
 
     private Direction worker(Unit unit) {
@@ -113,8 +136,13 @@ public class Computer {
                     case HARVEST:
                         if (gc.canHarvest(unit.id(), travels.get(unit.id()).directionOfInterest)) {
                             gc.harvest(unit.id(), travels.get(unit.id()).directionOfInterest);
+                            debug(unit.id() + " can harvest");
                         }
-                        if (gc.karboniteAt(travels.get(unit.id()).pointOfInterest()) < 0.1) {
+                        else {
+                            debug(unit.id() + " can  NOT  harvest");
+                        //}
+                        //if (gc.karboniteAt(travels.get(unit.id()).pointOfInterest()) < 0.1) {
+                            gettableKarboniteLocations.remove(travels.get(unit.id()).pointOfInterest());
                             giveNewWorkerJob(unit);
                             return worker(unit);
                         }
@@ -177,6 +205,7 @@ public class Computer {
                 }
                 ret.directionOfInterest = getRandomDir(false);
                 ret.destination = gettableKarboniteLocations.get(smallestIndex).addMultiple(opposite(ret.directionOfInterest), 1);
+                debug("closest karbonite: " + ret.destination.getX() + ", " + ret.destination.getY());
                 break;
             case START_BUILD_FACTORY:
             case START_BUILD_ROCKET:
@@ -233,13 +262,11 @@ public class Computer {
                 enemyUnits.put(units.get(i).id(), units.get(i));
                 continue;
             }
-            if (units.get(i).structureIsBuilt() < 0.5) {
-                structuresInProgress.add(units.get(i).id());
-            }
             switch (units.get(i).unitType()) {
                 case Factory:
                     if (units.get(i).structureIsBuilt() < 0.5) {
                         factoriesInProgress++;
+                        structuresInProgress.add(units.get(i).id());
                     } else {
                         factoryCount++;
                     }
@@ -247,6 +274,7 @@ public class Computer {
                 case Rocket:
                     if (units.get(i).structureIsBuilt() < 0.5) {
                         rocketsInProgress++;
+                        structuresInProgress.add(units.get(i).id());
                     } else {
                         rocketCount++;
                     }
@@ -256,7 +284,7 @@ public class Computer {
     }
 
     private WorkerTask getNewWorkerTask(Unit unit) {
-        if (gc.planet() == Planet.Mars) {
+        /*if (gc.planet() == Planet.Mars) {
             return WorkerTask.HARVEST;
         }
         if (gc.karbonite() < KARBONITE_SHORTAGE) {
@@ -274,7 +302,7 @@ public class Computer {
                 workersWorkingOnStructure.put(unit.id(), structureInProgress);
                 return WorkerTask.BUILD;
             }
-        }
+        }*/
         return WorkerTask.HARVEST;
     }
     private Direction opposite(Direction dir) {
