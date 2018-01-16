@@ -4,6 +4,7 @@ import java.util.*;
 
 public class Computer {
     static Random rand = new Random();
+    List<Direction> directions = Arrays.asList(Direction.North, Direction.Northeast, Direction.East, Direction.Southeast, Direction.South, Direction.Southwest, Direction.West, Direction.Northwest);
     final long WORKER_BUILD_RANGE_SQUARED = 100;
     final long KARBONITE_SHORTAGE = 50;
     final double FACTORY_SHORTAGE_COEFF = .01; // every 100 rounds, a new factory will be prioritized
@@ -44,9 +45,14 @@ public class Computer {
                 }
             }
         }
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < 8; j++) {
+                debug(directions.get(i).toString() + " rotated right " + j + " is " + rotateRight(directions.get(i), (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)).toString());
+            }
+        }
     }
     void mainLoop() {
-        System.out.println("Current round: " + gc.round());
+        //System.out.println("Current round: " + gc.round());
         VecUnit units = gc.myUnits();
         updateEnemyUnitsAndStructures();
         Direction moveDir;
@@ -66,12 +72,12 @@ public class Computer {
                 case Worker:
                     if (travels.containsKey(unit.id())) {
                         Travel t = travels.get(unit.id());
-                        debug(unit.id() + ", " + t.status.toString() + ", " + t.directionOfInterest.toString() + ", " + t.destination.getX() + ", " + t.destination.getY());
+                        //debug(unit.id() + ", " + t.status.toString() + ", " + t.directionOfInterest.toString() + ", " + t.destination.getX() + ", " + t.destination.getY());
                     } else {
-                        debug(unit.id() + "");
+                        //debug(unit.id() + "");
                     }
                     moveDir = worker(unit);
-                    debug("moved " + moveDir.toString());
+                    //debug("moved " + moveDir.toString());
                     break;
                 case Knight:
                     break;
@@ -108,7 +114,6 @@ public class Computer {
     }
 
     private Direction rotateRight(Direction moveDir, int num) {
-        List<Direction> directions = Arrays.asList(Direction.North, Direction.Northeast, Direction.East, Direction.Southeast, Direction.South, Direction.Southwest, Direction.West, Direction.Northwest);
         int index = (directions.indexOf(moveDir) + num) % directions.size();
         if (index < 0) {
             index += directions.size();
@@ -136,10 +141,10 @@ public class Computer {
                     case HARVEST:
                         if (gc.canHarvest(unit.id(), travels.get(unit.id()).directionOfInterest)) {
                             gc.harvest(unit.id(), travels.get(unit.id()).directionOfInterest);
-                            debug(unit.id() + " can harvest");
+                            //debug(unit.id() + " can harvest");
                         }
                         else {
-                            debug(unit.id() + " can  NOT  harvest");
+                            //debug(unit.id() + " can  NOT  harvest");
                         //}
                         //if (gc.karboniteAt(travels.get(unit.id()).pointOfInterest()) < 0.1) {
                             gettableKarboniteLocations.remove(travels.get(unit.id()).pointOfInterest());
@@ -203,14 +208,15 @@ public class Computer {
                         smallestIndex = i;
                     }
                 }
-                ret.directionOfInterest = getRandomDir(false);
-                ret.destination = gettableKarboniteLocations.get(smallestIndex).addMultiple(opposite(ret.directionOfInterest), 1);
-                debug("closest karbonite: " + ret.destination.getX() + ", " + ret.destination.getY());
+                MapLocation karbonite = gettableKarboniteLocations.get(smallestIndex);
+                ret.directionOfInterest = opposite(findNearestOpenDirectionToSpace(karbonite, worker.location().mapLocation()));
+                ret.destination = karbonite.addMultiple(opposite(ret.directionOfInterest), 1);
+                //debug("closest karbonite: " + ret.destination.getX() + ", " + ret.destination.getY());
                 break;
             case START_BUILD_FACTORY:
             case START_BUILD_ROCKET:
                 MapLocation loc = worker.location().mapLocation();
-                Direction dirT = findOpenDirectionToSpace(loc);
+                Direction dirT = findNearestOpenDirectionToSpace(loc, worker.location().mapLocation());
                 ret.directionOfInterest = opposite(dirT);
                 ret.destination = loc.addMultiple(dirT, 1);
                 break;
@@ -223,7 +229,7 @@ public class Computer {
                     }
                 }
                 MapLocation loc2 = gc.unit(structuresInProgress.get(closestIndex)).location().mapLocation();
-                Direction dirT2 = findOpenDirectionToSpace(loc2);
+                Direction dirT2 = findNearestOpenDirectionToSpace(loc2, worker.location().mapLocation());
                 ret.directionOfInterest = opposite(dirT2);
                 ret.destination = loc2.addMultiple(dirT2, 1);
                 break;
@@ -231,15 +237,26 @@ public class Computer {
         return ret;
     }
 
-    private Direction findOpenDirectionToSpace(MapLocation space) {
-        MapLocation locT;
-        Direction dirT;
-        do {
-            dirT = getRandomDir(false);
-            locT = space.addMultiple(dirT, 1);
-        } while (gc.startingMap(gc.planet()).isPassableTerrainAt(locT) > 0.5);
+    private Direction findNearestOpenDirectionToSpace(MapLocation space, MapLocation loc) {
+        Direction dirT = space.directionTo(loc);
+        for (int i = 0; i < 8; i++) {
+            dirT = rotateRight(space.directionTo(loc), (int)Math.floor((i+1)/2)*(i % 2 == 1 ? -1 : 1));
+            if (gc.startingMap(gc.planet()).isPassableTerrainAt(space.addMultiple(dirT, 1)) > 0.5) {
+                break;
+            }
+        }
         return dirT;
     }
+
+    //private Direction findOpenDirectionToSpace(MapLocation space) {
+        //MapLocation locT;
+        //Direction dirT;
+        //do {
+            //dirT = getRandomDir(false);
+            //locT = space.addMultiple(dirT, 1);
+        //} while (gc.startingMap(gc.planet()).isPassableTerrainAt(locT) > 0.5);
+        //return dirT;
+    //}
 
     private int isEnemyUnitInRange(Unit unit, long rangeSquared) {
         for (int i = 0; i < enemyUnits.size(); i++) {
