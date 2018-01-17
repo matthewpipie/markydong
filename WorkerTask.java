@@ -3,5 +3,6 @@ public enum WorkerTask {
     START_BUILD_FACTORY,
     START_BUILD_ROCKET,
     BUILD,
-    WANDER
+    WANDER,
+    HOLD_ONE_TURN
 }
