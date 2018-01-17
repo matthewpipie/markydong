@@ -163,6 +163,7 @@ public class Computer {
                             gc.blueprint(unit.id(), UnitType.Rocket, travels.get(unit.id()).directionOfInterest);
                             workerTaskMap.put(unit.id(), WorkerTask.BUILD);
                         }
+						break;
                     case BUILD:
                         Unit thingToBuild = gc.senseUnitAtLocation(travels.get(unit.id()).pointOfInterest());
                         if (gc.canBuild(unit.id(), thingToBuild.id())) {
