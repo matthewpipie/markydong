@@ -3,8 +3,7 @@ import bc.*;
 import java.util.*;
 
 public class Computer {
-    private final long MAX_ROUNDS_IN_ONE_TRAVEL = 30;
-    static Random rand = new Random();
+    static Random rand = new Random(1);
     List<Direction> directions = Arrays.asList(Direction.North, Direction.Northeast, Direction.East, Direction.Southeast, Direction.South, Direction.Southwest, Direction.West, Direction.Northwest);
     final long WORKER_BUILD_RANGE_SQUARED = 100;
     final long KARBONITE_SHORTAGE = 50;
@@ -13,6 +12,7 @@ public class Computer {
     //final int MAX_STRUCTURES_IN_PROGRESS_AT_ONCE = 2;
     final long DANGEROUS_RANGE_SQUARED_HEALER = 64;
     final long DANGEROUS_RANGE_SQUARED_WORKER = 16;
+    private final long MAX_ROUNDS_IN_ONE_TRAVEL = 30;
 
     GameController gc = new GameController();
     int factoriesInProgress = 0;
@@ -180,14 +180,17 @@ public class Computer {
                             workerTaskMap.put(worker.id(), WorkerTask.BUILD);
                         }
                     case BUILD:
-                        Unit thingToBuild = gc.senseUnitAtLocation(travels.get(worker.id()).pointOfInterest());
-                        if (gc.canBuild(worker.id(), thingToBuild.id())) {
-                            gc.build(worker.id(), thingToBuild.id());
-                        }
-                        if (thingToBuild.structureIsBuilt() > 0.5) { // dont know why it returns a short but 0=false, 1=true
-                            giveNewWorkerJob(worker);
-                            return worker(worker);
-                        }
+                        try {
+                            Unit thingToBuild = gc.senseUnitAtLocation(travels.get(worker.id()).pointOfInterest());
+                            if (gc.canBuild(worker.id(), thingToBuild.id())) {
+                                gc.build(worker.id(), thingToBuild.id());
+                            }
+                            if (thingToBuild.structureIsBuilt() > 0.5) { // dont know why it returns a short but 0=false, 1=true
+                                giveNewWorkerJob(worker);
+                                return worker(worker);
+                            }
+                        } catch (RuntimeException e) {}
+
                         break;
                 }
                 break;
@@ -335,7 +338,7 @@ public class Computer {
     }
 
     private WorkerTask getNewWorkerTask(Unit unit) {
-        if (gc.planet() == Planet.Mars) {
+        /*if (gc.planet() == Planet.Mars) {
             return WorkerTask.HARVEST;
         }
         if (gc.karbonite() < KARBONITE_SHORTAGE && gettableKarboniteLocations.size() != 0) {
@@ -343,7 +346,7 @@ public class Computer {
         }
         if (gc.round() * FACTORY_SHORTAGE_COEFF > factoryCount + factoriesInProgress) {
             return WorkerTask.START_BUILD_FACTORY;
-        }
+        }*/
         if (gc.round() * ROCKET_SHORTAGE_COEFF > rocketCount + rocketsInProgress) {
             return WorkerTask.START_BUILD_ROCKET;
         }
