@@ -1,6 +1,5 @@
 public enum TravelStatus {
-    //STARTING,
     IN_PROGRESS,
-    AT_DESTINATION, // = WORKING
+    AT_DESTINATION,
     NEEDS_NEW_JOB
 }
