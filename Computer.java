@@ -68,6 +68,7 @@ public class Computer {
             }
             base = new MapLocation(gc.planet(), x / (int) myUnits.size(), y / (int) myUnits.size());
             gc.disintegrateUnit(gc.myUnits().get(1).id()); //temp
+            debug(gc.team() + ", unit=" + gc.myUnits().get(0).id());
         }
     }
 
@@ -100,7 +101,7 @@ public class Computer {
                 switch (unit.unitType()) {
                     case Worker:
                         if (travels.containsKey(unit.id())) {
-                            if (unit.id() == 1) { // temp
+                            if (unit.id() == 4) { // temp
                                 Travel t = travels.get(unit.id());
                                 debug(unit.location().mapLocation().getX() + ", " + unit.location().mapLocation().getY() + ", " + workerTaskMap.get(unit.id()).toString() + " / " + t.status.toString() + ", " + t.directionOfInterest.toString() + ", " + t.getDestination().getX() + ", " + t.getDestination().getY());
                             } // temp
@@ -132,13 +133,13 @@ public class Computer {
                     for (int j = 0; j < 8; j++) {
                         if (gc.canMove(unit.id(), rotateRight(moveDir, (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)))) {
                             gc.moveRobot(unit.id(), rotateRight(moveDir, (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)));
-                            if (unit.id() == 1) {
+                            if (unit.id() == 4) {
                                 debug("moved " + moveDir.toString());
                             }
                             break;
                         }
                         else {
-                            if (unit.id() == 1) {
+                            if (unit.id() == 4) {
                                 debug("trying to move " + moveDir.toString() + ", but cant");
                             }
                         }
@@ -196,15 +197,15 @@ public class Computer {
                     case HARVEST:
                         if (gc.canHarvest(worker.id(), travels.get(worker.id()).directionOfInterest)) {
                             gc.harvest(worker.id(), travels.get(worker.id()).directionOfInterest);
-                            if (worker.id() == 1) {
-                                debug("can harvest in " + travels.get(1).directionOfInterest);
+                            if (worker.id() == 4) {
+                                debug("can harvest in " + travels.get(4).directionOfInterest);
                             }
                         }
                         else {
                             //debug(worker.id() + " can  NOT  harvest");
                         //}
                         //if (gc.karboniteAt(travels.get(worker.id()).pointOfInterest()) < 0.1) {
-                            if (worker.id() == 1) {
+                            if (worker.id() == 4) {
                                 //debug("can't harvest in " + travels.get(1).directionOfInterest + ", it has " + gc.karboniteAt(travels.get(1).pointOfInterest()) + " karbonite, so removing it (" +
                                         //decryptMapLocation(gettableKarboniteLocations.get(gettableKarboniteLocations.indexOf(encryptMapLocation(travels.get(1).pointOfInterest())))).getX() + ", " +
                                         //decryptMapLocation(gettableKarboniteLocations.get(gettableKarboniteLocations.indexOf(encryptMapLocation(travels.get(1).pointOfInterest())))).getY());
@@ -288,18 +289,28 @@ public class Computer {
                 }
                 int smallestIndex = 0;
                 for (int i = 0; i < gettableKarboniteLocations.size(); i++) {
-                    try {
-                        if (gc.karboniteAt(decryptMapLocation(gettableKarboniteLocations.get(i))) >
-                                    gc.karboniteAt(decryptMapLocation(gettableKarboniteLocations.get(smallestIndex)))) {
-                            if (decryptMapLocation(gettableKarboniteLocations.get(i)).distanceSquaredTo(worker.location().mapLocation()) <
-                                    decryptMapLocation(gettableKarboniteLocations.get(smallestIndex)).distanceSquaredTo(worker.location().mapLocation())) {
+                    MapLocation testLoc = decryptMapLocation(gettableKarboniteLocations.get(i));
+                    MapLocation smallest = decryptMapLocation(gettableKarboniteLocations.get(smallestIndex));
+                    if (gc.canSenseLocation(testLoc) && gc.canSenseLocation(smallest)) {
+                        if (gc.karboniteAt(testLoc) > gc.karboniteAt(smallest)) {
+                            if (worker.location().mapLocation().distanceSquaredTo(testLoc) <=
+                                    worker.location().mapLocation().distanceSquaredTo(smallest)) {
                                 smallestIndex = i;
                             }
                         }
-                    } catch (RuntimeException e) {
-                        if (decryptMapLocation(gettableKarboniteLocations.get(i)).distanceSquaredTo(worker.location().mapLocation()) <
-                                decryptMapLocation(gettableKarboniteLocations.get(smallestIndex)).distanceSquaredTo(worker.location().mapLocation())) {
-                            smallestIndex = i;
+                    }
+                    else {
+                        if (gc.startingMap(gc.planet()).initialKarboniteAt(testLoc) >
+                                gc.startingMap(gc.planet()).initialKarboniteAt(smallest)) {
+                            if (worker.location().mapLocation().distanceSquaredTo(testLoc) <=
+                                    worker.location().mapLocation().distanceSquaredTo(smallest)) {
+                                smallestIndex = i;
+                            }
+                        }
+                        else {
+                            if (worker.location().mapLocation().distanceSquaredTo(testLoc) <
+                                    worker.location().mapLocation().distanceSquaredTo(smallest)) {
+                                smallestIndex = i;
                         }
                     }
                 }
