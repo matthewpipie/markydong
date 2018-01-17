@@ -3,7 +3,7 @@ import bc.*;
 import java.util.*;
 
 public class Computer {
-    static Random rand = new Random(1);
+    static Random rand = new Random(0);
     List<Direction> directions = Arrays.asList(Direction.North, Direction.Northeast, Direction.East, Direction.Southeast, Direction.South, Direction.Southwest, Direction.West, Direction.Northwest);
     final long WORKER_BUILD_RANGE_SQUARED = 25;
     final long KARBONITE_SHORTAGE = 100;
@@ -17,7 +17,7 @@ public class Computer {
     final long DANGEROUS_RANGE_SQUARED_WORKER = 25;
     final long MAX_ROUNDS_IN_ONE_TRAVEL = 30;
     final long EARTH_DEATH = 750;
-    final int MAX_UNIT_DEVIATION = 5;
+    final int MAX_UNIT_DEVIATION_SQUARED = 25;
 
     GameController gc = new GameController();
     int factoriesInProgress = 0;
@@ -67,6 +67,7 @@ public class Computer {
                 y += myUnits.get(i).location().mapLocation().getY();
             }
             base = new MapLocation(gc.planet(), x / (int) myUnits.size(), y / (int) myUnits.size());
+            gc.disintegrateUnit(gc.myUnits().get(1).id()); //temp
         }
     }
 
@@ -175,13 +176,13 @@ public class Computer {
         if (workerTaskMap.get(worker.id()) == WorkerTask.HOLD_ONE_TURN) {
             giveNewWorkerJob(worker);
         }
-        if (travels.get(worker.id()).status != TravelStatus.AT_DESTINATION && travels.get(worker.id()).getRoundSinceDestinationChange() > MAX_ROUNDS_IN_ONE_TRAVEL) {
+        if (travels.get(worker.id()).getRoundSinceDestinationChange() - gc.round() > MAX_ROUNDS_IN_ONE_TRAVEL) {
             giveNewWorkerJob(worker);
         }
         if (!tooManyWorkers()) {
             for (int i = 0; i < directions.size(); i++) {
                 if (gc.canReplicate(worker.id(), directions.get(i))) {
-                    gc.replicate(worker.id(), directions.get(i));
+                    //gc.replicate(worker.id(), directions.get(i));
                     break;
                 }
             }
@@ -279,19 +280,11 @@ public class Computer {
         switch (workerTaskMap.get(worker.id())) {
             case HOLD_ONE_TURN:
             case WANDER:
-                int x = rand.nextInt((int)gc.startingMap(gc.planet()).getWidth());
-                int y = rand.nextInt((int)gc.startingMap(gc.planet()).getHeight());
-                ret.setDestination(new MapLocation(gc.planet(), x, y), gc.round());
-                ret.directionOfInterest = getRandomDir(true);
-                return ret;
+                return wanderTravel();
             case HARVEST:
                 if (gettableKarboniteLocations.size() == 0) {
                     workerTaskMap.put(worker.id(), WorkerTask.WANDER);
-                    int x2 = rand.nextInt((int)gc.startingMap(gc.planet()).getWidth());
-                    int y2 = rand.nextInt((int)gc.startingMap(gc.planet()).getHeight());
-                    ret.setDestination(new MapLocation(gc.planet(), x2, y2), gc.round());
-                    ret.directionOfInterest = getRandomDir(true);
-                    return ret;
+                    return wanderTravel();
                 }
                 int smallestIndex = 0;
                 for (int i = 0; i < gettableKarboniteLocations.size(); i++) {
@@ -313,14 +306,24 @@ public class Computer {
                 debug("smallestIndex is " + smallestIndex + ", and gKL is this long: " + gettableKarboniteLocations.size());
                 MapLocation karbonite = decryptMapLocation(gettableKarboniteLocations.get(smallestIndex));
                 ret.directionOfInterest = opposite(findNearestOpenDirectionToSpace(karbonite, worker.location().mapLocation()));
+                if (ret.directionOfInterest == null) {
+                    return wanderTravel();
+                }
                 ret.setDestination(karbonite.addMultiple(opposite(ret.directionOfInterest), 1), gc.round());
                 //debug("closest karbonite: " + ret.destination.getX() + ", " + ret.destination.getY());
                 break;
             case START_BUILD_FACTORY:
             case START_BUILD_ROCKET:
-                MapLocation loc = base.addMultiple(getRandomDir(false), rand.nextInt(MAX_UNIT_DEVIATION));
+                VecMapLocation vecMapLocation = gc.allLocationsWithin(base, MAX_UNIT_DEVIATION_SQUARED);
+                MapLocation loc;
+                do {
+                    loc = vecMapLocation.get(rand.nextInt((int) vecMapLocation.size()));
+                } while (gc.startingMap(gc.planet()).isPassableTerrainAt(loc) < 0.5);
                 Direction dirT = findNearestOpenDirectionToSpace(loc, worker.location().mapLocation());
                 ret.directionOfInterest = opposite(dirT);
+                if (ret.directionOfInterest == null) {
+                    return wanderTravel();
+                }
                 ret.setDestination(loc.addMultiple(dirT, 1), gc.round());
                 break;
             case BUILD:
@@ -334,9 +337,22 @@ public class Computer {
                 MapLocation loc2 = gc.unit(structuresInProgress.get(closestIndex)).location().mapLocation();
                 Direction dirT2 = findNearestOpenDirectionToSpace(loc2, worker.location().mapLocation());
                 ret.directionOfInterest = opposite(dirT2);
+                if (ret.directionOfInterest == null) {
+                    return wanderTravel();
+                }
                 ret.setDestination(loc2.addMultiple(dirT2, 1), gc.round());
                 break;
         }
+        return ret;
+    }
+
+    private Travel wanderTravel() {
+        Travel ret = new Travel();
+        int x2 = rand.nextInt((int)gc.startingMap(gc.planet()).getWidth());
+        int y2 = rand.nextInt((int)gc.startingMap(gc.planet()).getHeight());
+        ret.status = TravelStatus.IN_PROGRESS;
+        ret.setDestination(new MapLocation(gc.planet(), x2, y2), gc.round());
+        ret.directionOfInterest = getRandomDir(true);
         return ret;
     }
 
@@ -350,8 +366,7 @@ public class Computer {
                 }
             } catch (RuntimeException e) {}
         }
-        debug("NO WAY TO GET THERE");
-        return dirT;
+        return null;
     }
 
     //private Direction findOpenDirectionToSpace(MapLocation space) {
@@ -441,6 +456,7 @@ public class Computer {
         return WorkerTask.HARVEST;
     }
     private Direction opposite(Direction dir) {
+        if (dir == null) {return null;}
         switch (dir) {
             case North:
                 return Direction.South;
@@ -471,8 +487,8 @@ public class Computer {
         return new MapLocation(gc.planet(), Integer.parseInt(split[0]), Integer.parseInt(split[1]));
     }
     void debug(String num) {
-        if (gc.round() > 1000 || gc.round() < 50) {
+        //if (gc.round() > 1000 || gc.round() < 50) {
             System.out.println("DEBUG " + num);
-        }
+        //}
     }
 }
