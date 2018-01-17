@@ -311,6 +311,7 @@ public class Computer {
                             if (worker.location().mapLocation().distanceSquaredTo(testLoc) <
                                     worker.location().mapLocation().distanceSquaredTo(smallest)) {
                                 smallestIndex = i;
+                            }
                         }
                     }
                 }
