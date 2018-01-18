@@ -1,5 +1,6 @@
 import bc.*;
 
+import java.lang.ref.PhantomReference;
 import java.util.*;
 
 public class Computer {
@@ -18,6 +19,7 @@ public class Computer {
     final long MAX_ROUNDS_IN_ONE_TRAVEL = 30;
     final long EARTH_DEATH = 750;
     final int MAX_UNIT_DEVIATION_SQUARED = 25;
+    final int ROCKET_LAUNCH_TURNS = 30;
 
     GameController gc = new GameController();
     int factoriesInProgress = 0;
@@ -32,6 +34,8 @@ public class Computer {
     ArrayList<Integer> structuresInProgress = new ArrayList<>();
     Map<Integer, Unit> enemyUnits = new HashMap<>();
     Map<Integer, Travel> travels = new HashMap<>();
+    ArrayList<String> landableLocations = new ArrayList<>();
+    Map<Integer, Long> rocketBuiltTimes = new HashMap<>();
     MapLocation base;
     Computer() {
         init();
@@ -67,8 +71,22 @@ public class Computer {
                 y += myUnits.get(i).location().mapLocation().getY();
             }
             base = new MapLocation(gc.planet(), x / (int) myUnits.size(), y / (int) myUnits.size());
-            //gc.disintegrateUnit(gc.myUnits().get(1).id()); //temp
-            //debug(gc.team() + ", unit=" + gc.myUnits().get(0).id());
+            getLandableLocations();
+        }
+    }
+
+    private void getLandableLocations() {
+        PlanetMap planetMap = gc.startingMap(Planet.Mars);
+        long w = planetMap.getWidth();
+        long h = planetMap.getHeight();
+        MapLocation t;
+        for (int i = 0; i < w; i++) {
+            for (int j = 0; j < h; j++) {
+                t = new MapLocation(Planet.Mars, i, j);
+                if (planetMap.isPassableTerrainAt(t) > 0.5) {
+                    landableLocations.add(encryptMapLocation(t));
+                }
+            }
         }
     }
 
@@ -88,6 +106,11 @@ public class Computer {
             if (unit.location().isInSpace()) {
                 continue;
             }
+            if (unit.unitType() == UnitType.Factory || unit.unitType() == UnitType.Rocket) {
+                if (unit.structureIsBuilt() < 0.5) {
+                    continue;
+                }
+            }
 
             if (travels.containsKey(unit.id())) {
                 if (unit.location().mapLocation().equals(travels.get(unit.id()).getDestination()) && travels.get(unit.id()).status != TravelStatus.AT_DESTINATION) {
@@ -100,14 +123,7 @@ public class Computer {
             if (!unit.location().isInGarrison()) {
                 switch (unit.unitType()) {
                     case Worker:
-                        if (travels.containsKey(unit.id())) {
-                            if (unit.id() == 4) { // temp
-                                Travel t = travels.get(unit.id());
-                                debug(unit.location().mapLocation().getX() + ", " + unit.location().mapLocation().getY() + ", " + workerTaskMap.get(unit.id()).toString() + " / " + t.status.toString() + ", " + t.directionOfInterest.toString() + ", " + t.getDestination().getX() + ", " + t.getDestination().getY());
-                            } // temp
-                        }
                         moveDir = worker(unit);
-                        //debug("moved " + moveDir.toString());
                         break;
                     case Knight:
                         break;
@@ -118,11 +134,15 @@ public class Computer {
                     case Healer:
                         break;
                     case Factory:
-                        if (gc.canProduceRobot(unit.id(), UnitType.Worker)) {
-                            gc.produceRobot(unit.id(), UnitType.Worker);
+                        if (workerCount + workersInProgress < 2) {
+                            if (gc.canProduceRobot(unit.id(), UnitType.Worker)) {
+                                gc.produceRobot(unit.id(), UnitType.Worker);
+                            }
+                            if (gc.canUnload())
                         }
                         break;
                     case Rocket:
+                        rocket(unit);
                         break;
                 }
             }
@@ -133,15 +153,7 @@ public class Computer {
                     for (int j = 0; j < 8; j++) {
                         if (gc.canMove(unit.id(), rotateRight(moveDir, (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)))) {
                             gc.moveRobot(unit.id(), rotateRight(moveDir, (int) Math.floor((j + 1) / 2) * (j % 2 == 1 ? -1 : 1)));
-                            if (unit.id() == 4) {
-                                debug("moved " + moveDir.toString());
-                            }
                             break;
-                        }
-                        else {
-                            if (unit.id() == 4) {
-                                debug("trying to move " + moveDir.toString() + ", but cant");
-                            }
                         }
                     }
                 }
@@ -150,6 +162,39 @@ public class Computer {
 
         // Submit the actions we've done, and wait for our next turn.
         gc.nextTurn();
+    }
+
+    private void rocket(Unit rocket) {
+        if (!rocketBuiltTimes.containsKey(rocket.id())) {
+            rocketBuiltTimes.put(rocket.id(), gc.round());
+        }
+        if (gc.planet() == Planet.Mars) {
+            if (rocket.structureGarrison().size() == 0) {
+                gc.disintegrateUnit(rocket.id());
+            }
+            else {
+                for (int i = 0; i < directions.size(); i++) {
+                    if (gc.canUnload(rocket.id(), directions.get(i))) {
+                        gc.unload(rocket.id(), directions.get(i));
+                    }
+                }
+            }
+        }
+        else {
+            //if (rocket.structureGarrison().size() == 8 || gc.round() == EARTH_DEATH - 1) {
+            if (gc.round() - rocketBuiltTimes.get(rocket.id()) > ROCKET_LAUNCH_TURNS || gc.round() == EARTH_DEATH - 1) {
+                MapLocation destination = decryptMapLocation(landableLocations.get(rand.nextInt(landableLocations.size())));
+                if (gc.canLaunchRocket(rocket.id(), destination)) {
+                    gc.launchRocket(rocket.id(), destination);
+                    for (int i = 0; i < directions.size(); i++) {
+                        try {
+                            landableLocations.remove(encryptMapLocation(destination.add(directions.get(i))));
+                        }
+                        catch (Exception e) {}
+                    }
+                }
+            }
+        }
     }
 
     private Direction rotateRight(Direction moveDir, int num) {
@@ -166,7 +211,6 @@ public class Computer {
         // if enemy, run away
         if ((enemyID = isEnemyUnitInRange(worker, DANGEROUS_RANGE_SQUARED_WORKER)) != -1) {
             if (enemyUnits.get(enemyID).unitType() != UnitType.Worker) {
-                debug("scared of enemy");
                 return opposite(worker.location().mapLocation().directionTo(enemyUnits.get(enemyID).location().mapLocation()));
             }
         }
@@ -200,19 +244,8 @@ public class Computer {
                     case HARVEST:
                         if (gc.canHarvest(worker.id(), travels.get(worker.id()).directionOfInterest)) {
                             gc.harvest(worker.id(), travels.get(worker.id()).directionOfInterest);
-                            if (worker.id() == 4) {
-                                debug("can harvest in " + travels.get(4).directionOfInterest);
-                            }
                         }
                         else {
-                            //debug(worker.id() + " can  NOT  harvest");
-                        //}
-                        //if (gc.karboniteAt(travels.get(worker.id()).pointOfInterest()) < 0.1) {
-                            if (worker.id() == 4) {
-                                //debug("can't harvest in " + travels.get(1).directionOfInterest + ", it has " + gc.karboniteAt(travels.get(1).pointOfInterest()) + " karbonite, so removing it (" +
-                                        //decryptMapLocation(gettableKarboniteLocations.get(gettableKarboniteLocations.indexOf(encryptMapLocation(travels.get(1).pointOfInterest())))).getX() + ", " +
-                                        //decryptMapLocation(gettableKarboniteLocations.get(gettableKarboniteLocations.indexOf(encryptMapLocation(travels.get(1).pointOfInterest())))).getY());
-                            }
                             if (gc.canSenseLocation(travels.get(worker.id()).pointOfInterest())) {
                                 if (gc.karboniteAt(travels.get(worker.id()).pointOfInterest()) < 0.1) {
                                     gettableKarboniteLocations.remove(encryptMapLocation(travels.get(worker.id()).pointOfInterest()));
@@ -326,14 +359,12 @@ public class Computer {
                     }
 
                 }
-                debug("smallestIndex is " + smallestIndex + ", and gKL is this long: " + gettableKarboniteLocations.size());
                 MapLocation karbonite = decryptMapLocation(gettableKarboniteLocations.get(smallestIndex));
                 ret.directionOfInterest = opposite(findNearestOpenDirectionToSpace(karbonite, worker.location().mapLocation()));
                 if (ret.directionOfInterest == null) {
                     return wanderTravel();
                 }
                 ret.setDestination(karbonite.addMultiple(opposite(ret.directionOfInterest), 1), gc.round());
-                //debug("closest karbonite: " + ret.destination.getX() + ", " + ret.destination.getY());
                 break;
             case START_BUILD_FACTORY:
             case START_BUILD_ROCKET:
@@ -503,15 +534,20 @@ public class Computer {
         }
     }
     String encryptMapLocation(MapLocation loc) {
-        return loc.getX() + "," + loc.getY();
+        return (loc.getPlanet() == Planet.Mars ? "M" : "E") + " " + loc.getX() + " " + loc.getY();
     }
     MapLocation decryptMapLocation(String loc) {
-        final String[] split = loc.split(",");
-        return new MapLocation(gc.planet(), Integer.parseInt(split[0]), Integer.parseInt(split[1]));
+        final String[] split = loc.split(" ");
+        Planet p;
+        if (split[0] == "M") {
+            p = Planet.Mars;
+        }
+        else {
+            p = Planet.Earth;
+        }
+        return new MapLocation(p, Integer.parseInt(split[1]), Integer.parseInt(split[2]));
     }
     void debug(String num) {
-        //if (gc.round() > 1000 || gc.round() < 50) {
-            System.out.println("DEBUG " + num);
-        //}
+        System.out.println("DEBUG " + num);
     }
 }
