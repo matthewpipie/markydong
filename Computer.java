@@ -67,8 +67,8 @@ public class Computer {
                 y += myUnits.get(i).location().mapLocation().getY();
             }
             base = new MapLocation(gc.planet(), x / (int) myUnits.size(), y / (int) myUnits.size());
-            gc.disintegrateUnit(gc.myUnits().get(1).id()); //temp
-            debug(gc.team() + ", unit=" + gc.myUnits().get(0).id());
+            //gc.disintegrateUnit(gc.myUnits().get(1).id()); //temp
+            //debug(gc.team() + ", unit=" + gc.myUnits().get(0).id());
         }
     }
 
@@ -177,13 +177,13 @@ public class Computer {
         if (workerTaskMap.get(worker.id()) == WorkerTask.HOLD_ONE_TURN) {
             giveNewWorkerJob(worker);
         }
-        if (travels.get(worker.id()).getRoundSinceDestinationChange() - gc.round() > MAX_ROUNDS_IN_ONE_TRAVEL) {
+        if (gc.round() - travels.get(worker.id()).getRoundSinceDestinationChange() > MAX_ROUNDS_IN_ONE_TRAVEL) {
             giveNewWorkerJob(worker);
         }
         if (!tooManyWorkers()) {
             for (int i = 0; i < directions.size(); i++) {
                 if (gc.canReplicate(worker.id(), directions.get(i))) {
-                    //gc.replicate(worker.id(), directions.get(i));
+                    gc.replicate(worker.id(), directions.get(i));
                     break;
                 }
             }
@@ -194,6 +194,9 @@ public class Computer {
                 break;
             case AT_DESTINATION:
                 switch (workerTaskMap.get(worker.id())) {
+                    case WANDER:
+                        giveNewWorkerJob(worker);
+                        break;
                     case HARVEST:
                         if (gc.canHarvest(worker.id(), travels.get(worker.id()).directionOfInterest)) {
                             gc.harvest(worker.id(), travels.get(worker.id()).directionOfInterest);
@@ -210,10 +213,18 @@ public class Computer {
                                         //decryptMapLocation(gettableKarboniteLocations.get(gettableKarboniteLocations.indexOf(encryptMapLocation(travels.get(1).pointOfInterest())))).getX() + ", " +
                                         //decryptMapLocation(gettableKarboniteLocations.get(gettableKarboniteLocations.indexOf(encryptMapLocation(travels.get(1).pointOfInterest())))).getY());
                             }
-                            gettableKarboniteLocations.remove(encryptMapLocation(travels.get(worker.id()).pointOfInterest()));
-                            giveNewWorkerJob(worker);
-                            return worker(worker);
+                            if (gc.canSenseLocation(travels.get(worker.id()).pointOfInterest())) {
+                                if (gc.karboniteAt(travels.get(worker.id()).pointOfInterest()) < 0.1) {
+                                    gettableKarboniteLocations.remove(encryptMapLocation(travels.get(worker.id()).pointOfInterest()));
+                                    giveNewWorkerJob(worker);
+                                    return worker(worker);
+                                }
+                            }
+                            else {
+                                giveNewWorkerJob(worker);
+                            }
                         }
+                        ret = Direction.Center;
                         break;
                     case START_BUILD_FACTORY:
                         if (gc.canBlueprint(worker.id(), UnitType.Factory, travels.get(worker.id()).directionOfInterest)) {
@@ -258,6 +269,9 @@ public class Computer {
             return gc.round() * WORKER_SHORTAGE_COEFF_MARS < workerCount + workersInProgress || workerCount + workersInProgress > WORKER_COUNT_MAX_MARS;
         }
         else {
+            if (gettableKarboniteLocations.size() == 0) {
+                return true;
+            }
             return gc.round() * WORKER_SHORTAGE_COEFF_EARTH < workerCount + workersInProgress || workerCount + workersInProgress > WORKER_COUNT_MAX_EARTH;
         }
     }
@@ -291,29 +305,26 @@ public class Computer {
                 for (int i = 0; i < gettableKarboniteLocations.size(); i++) {
                     MapLocation testLoc = decryptMapLocation(gettableKarboniteLocations.get(i));
                     MapLocation smallest = decryptMapLocation(gettableKarboniteLocations.get(smallestIndex));
-                    if (gc.canSenseLocation(testLoc) && gc.canSenseLocation(smallest)) {
-                        if (gc.karboniteAt(testLoc) > gc.karboniteAt(smallest)) {
-                            if (worker.location().mapLocation().distanceSquaredTo(testLoc) <=
+                    if (worker.location().mapLocation().distanceSquaredTo(testLoc) <
                                     worker.location().mapLocation().distanceSquaredTo(smallest)) {
-                                smallestIndex = i;
-                            }
-                        }
+                        smallestIndex = i;
                     }
-                    else {
-                        if (gc.startingMap(gc.planet()).initialKarboniteAt(testLoc) >
-                                gc.startingMap(gc.planet()).initialKarboniteAt(smallest)) {
-                            if (worker.location().mapLocation().distanceSquaredTo(testLoc) <=
-                                    worker.location().mapLocation().distanceSquaredTo(smallest)) {
+                    else if (worker.location().mapLocation().distanceSquaredTo(testLoc) ==
+                            worker.location().mapLocation().distanceSquaredTo(smallest)) {
+                        if (gc.canSenseLocation(testLoc) && gc.canSenseLocation(smallest)) {
+                            if (gc.karboniteAt(testLoc) > gc.karboniteAt(smallest)) {
                                 smallestIndex = i;
                             }
                         }
                         else {
-                            if (worker.location().mapLocation().distanceSquaredTo(testLoc) <
-                                    worker.location().mapLocation().distanceSquaredTo(smallest)) {
-                                smallestIndex = i;
+                            if (gc.startingMap(gc.planet()).initialKarboniteAt(testLoc) >
+                                    gc.startingMap(gc.planet()).initialKarboniteAt(smallest)) {
+                                        smallestIndex = i;
                             }
                         }
+
                     }
+
                 }
                 debug("smallestIndex is " + smallestIndex + ", and gKL is this long: " + gettableKarboniteLocations.size());
                 MapLocation karbonite = decryptMapLocation(gettableKarboniteLocations.get(smallestIndex));
