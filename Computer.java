@@ -10,7 +10,7 @@ public class Computer {
     final long WORKER_BUILD_RANGE_SQUARED = 25;
     final long KARBONITE_SHORTAGE = 100;
     final double FACTORY_SHORTAGE_COEFF = .01; // every 100 rounds, a new factory will be prioritized
-    final double ROCKET_SHORTAGE_COEFF = .0066; // every ~150 rounds, a new factory will be prioritized
+    final double ROCKET_SHORTAGE_COEFF = .006; // every ~166 rounds, a new rocket will be prioritized
     final double WORKER_SHORTAGE_COEFF_EARTH = .25;
     final double WORKER_SHORTAGE_COEFF_MARS = .5;
     final long WORKER_COUNT_MAX_EARTH = 10;
@@ -21,6 +21,8 @@ public class Computer {
     final long EARTH_DEATH = 750;
     final int MAX_UNIT_DEVIATION_SQUARED = 25;
     final int ROCKET_LAUNCH_TURNS = 30;
+    final int MAX_UNITS = 60;
+    final long MAX_ROUND_TO_PRODUCE = EARTH_DEATH - 20;
 
     GameController gc = new GameController();
     int factoriesInProgress = 0;
@@ -113,7 +115,7 @@ public class Computer {
                 }
             }
 
-            if (travels.containsKey(unit.id())) {
+            if (travels.containsKey(unit.id()) && !unit.location().isInGarrison()) {
                 if (unit.location().mapLocation().equals(travels.get(unit.id()).getDestination()) && travels.get(unit.id()).status != TravelStatus.AT_DESTINATION) {
                     Travel temp = travels.get(unit.id());
                     temp.status = TravelStatus.AT_DESTINATION;
@@ -144,16 +146,19 @@ public class Computer {
                     }
                 }
                 else {
-                    Unit rocket = gc.unit(unitsGoingToRockets.get(unit.id()));
-                    if (gc.canLoad(rocket.id(), unit.id())) {
-                        gc.load(rocket.id(), unit.id());
-                        unitsGoingToRockets.remove(unit.id());
-                    }
-                    else {
-                        moveDir = unit.location().mapLocation().directionTo(rocket.location().mapLocation());
-                        if (moveDir == Direction.Center) {
+                    try {
+                        Unit rocket = gc.unit(unitsGoingToRockets.get(unit.id()));
+                        if (gc.canLoad(rocket.id(), unit.id())) {
+                            gc.load(rocket.id(), unit.id());
                             unitsGoingToRockets.remove(unit.id());
+                        } else {
+                            moveDir = unit.location().mapLocation().directionTo(rocket.location().mapLocation());
+                            if (moveDir == Direction.Center) {
+                                unitsGoingToRockets.remove(unit.id());
+                            }
                         }
+                    } catch (RuntimeException e) {
+                        unitsGoingToRockets.remove(unit.id());
                     }
                 }
             }
@@ -177,17 +182,24 @@ public class Computer {
 
     private void factory(Unit factory) {
         UnitType robotToProduce = getRobotToProduceNext();
-        if (gc.canProduceRobot(factory.id(), robotToProduce)) {
-            gc.produceRobot(factory.id(), robotToProduce);
+        if (robotToProduce != null) {
+            if (gc.canProduceRobot(factory.id(), robotToProduce)) {
+                gc.produceRobot(factory.id(), robotToProduce);
+            }
         }
         for (int i = 0; i < directions.size(); i++) {
-            if (gc.canUnload(factory.id(), directions.get(i)));
+            if (gc.canUnload(factory.id(), directions.get(i))) {
+                gc.unload(factory.id(), directions.get(i));
+            }
         }
     }
 
     private UnitType getRobotToProduceNext() {
         if (unitCounts.get(UnitType.Worker) + workersInProgress < 2) {
             return UnitType.Worker;
+        }
+        if (gc.myUnits().size() > MAX_UNITS || gc.round() >= MAX_ROUND_TO_PRODUCE) {
+            return null;
         }
         Map<UnitType, Integer> odds = new LinkedHashMap<>();
         double x;
@@ -225,20 +237,7 @@ public class Computer {
     private void rocket(Unit rocket) {
         if (!rocketBuiltTimes.containsKey(rocket.id())) {
             rocketBuiltTimes.put(rocket.id(), gc.round());
-        }
-        if (rocket.rocketIsUsed() > 0.5) {
-            if (rocket.structureGarrison().size() == 0) {
-                gc.disintegrateUnit(rocket.id());
-            }
-            else {
-                for (int i = 0; i < directions.size(); i++) {
-                    if (gc.canUnload(rocket.id(), directions.get(i))) {
-                        gc.unload(rocket.id(), directions.get(i));
-                    }
-                }
-            }
-        }
-        else {
+
             VecUnit units = gc.myUnits();
             ArrayList<Integer> unitsToBoard = new ArrayList<>();
             int workerCount = 0;
@@ -259,16 +258,44 @@ public class Computer {
                 }
                 unitsToBoard.add(units.get(i).id());
             }
+            if (workerCount == 0) {
+                for (int i = 0; i < units.size(); i++) {
+                    if (units.get(i).unitType() == UnitType.Worker) {
+                        unitsToBoard.add(units.get(i).id());
+                        break;
+                    }
+                }
+            }
             for (int i = 0; i < unitsToBoard.size(); i++) {
                 unitsGoingToRockets.put(unitsToBoard.get(i), rocket.id());
+                debug(unitsToBoard.get(i) +" is boarding rocket " + rocket.id());
             }
-            if (gc.round() - rocketBuiltTimes.get(rocket.id()) > ROCKET_LAUNCH_TURNS || gc.round() == EARTH_DEATH - 1 || rocket.structureGarrison().size() == rocket.structureMaxCapacity()) {
+        }
+        if (rocket.rocketIsUsed() > 0.5) {
+            debug("landed, on board: " + rocket.structureGarrison().size());
+            if (rocket.structureGarrison().size() == 0) {
+                gc.disintegrateUnit(rocket.id());
+            }
+            else {
+                for (int i = 0; i < directions.size(); i++) {
+                    if (gc.canUnload(rocket.id(), directions.get(i))) {
+                        gc.unload(rocket.id(), directions.get(i));
+                    }
+                }
+            }
+        }
+        else if (rocket.structureGarrison().size() != 0) {
+            if (gc.round() - rocketBuiltTimes.get(rocket.id()) > ROCKET_LAUNCH_TURNS || gc.round() == EARTH_DEATH - 2 || rocket.structureGarrison().size() == rocket.structureMaxCapacity()) {
                 MapLocation destination = decryptMapLocation(landableLocations.get(rand.nextInt(landableLocations.size())));
                 if (gc.canLaunchRocket(rocket.id(), destination)) {
+                    ArrayList<Integer> unitsToRemove = new ArrayList<>();
                     for (Integer unit : unitsGoingToRockets.keySet()) {
                         if (unitsGoingToRockets.get(unit) == rocket.id()) {
-                            unitsGoingToRockets.remove(unit);
+                            unitsToRemove.add(unitsGoingToRockets.get(unit));
                         }
+                    }
+                    for (int i = 0; i < unitsToRemove.size(); i++) {
+                        unitsGoingToRockets.remove(unitsToRemove.get(i));
                     }
                     gc.launchRocket(rocket.id(), destination);
                     for (int i = 0; i < directions.size(); i++) {
@@ -531,6 +558,14 @@ public class Computer {
     }
 
     private void updateEnemyUnitsAndStructures() {
+        if (gc.planet() == Planet.Mars) {
+            if (gc.asteroidPattern().hasAsteroid(gc.round())) {
+                MapLocation loc = gc.asteroidPattern().asteroid(gc.round()).getLocation();
+                //if (gc.startingMap(Planet.Mars).isPassableTerrainAt(loc) > 0.5) { TODO: uncomment this if you can't mine karbonite on the side of an ungettable loc
+                    gettableKarboniteLocations.add(encryptMapLocation(loc));
+                //}
+            }
+        }
         factoriesInProgress = 0;
         rocketsInProgress = 0;
         workersInProgress = 0;
@@ -621,7 +656,7 @@ public class Computer {
     MapLocation decryptMapLocation(String loc) {
         final String[] split = loc.split(" ");
         Planet p;
-        if (split[0] == "M") {
+        if (split[0].equals("M")) {
             p = Planet.Mars;
         }
         else {
