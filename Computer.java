@@ -549,6 +549,7 @@ public class Computer {
     private int isEnemyUnitInRange(Unit unit, long rangeSquared) {
         for (int i = 0; i < enemyUnits.size(); i++) {
             try {
+                if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
                 if (enemyUnits.get(i).location().mapLocation().distanceSquaredTo(unit.location().mapLocation()) <= rangeSquared) {
                     return i;
                 }
