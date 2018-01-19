@@ -6,6 +6,7 @@ import java.util.*;
 public class Computer {
     static Random rand = new Random(0);
     List<Direction> directions = Arrays.asList(Direction.North, Direction.Northeast, Direction.East, Direction.Southeast, Direction.South, Direction.Southwest, Direction.West, Direction.Northwest);
+    List<UnitType> unitTypes = Arrays.asList(UnitType.values());
     final long WORKER_BUILD_RANGE_SQUARED = 25;
     final long KARBONITE_SHORTAGE = 100;
     final double FACTORY_SHORTAGE_COEFF = .01; // every 100 rounds, a new factory will be prioritized
@@ -23,11 +24,10 @@ public class Computer {
 
     GameController gc = new GameController();
     int factoriesInProgress = 0;
-    int factoryCount = 0;
     int rocketsInProgress = 0;
-    int rocketCount = 0;
-    int workerCount = 0;
     int workersInProgress = 0;
+
+    Map<UnitType, Integer> unitCounts = new HashMap<>();
     Map<Integer, WorkerTask> workerTaskMap = new HashMap<>();
     Map<Integer, Integer> workersWorkingOnStructure = new HashMap<>(); // worker id -> structure id
     ArrayList<String> gettableKarboniteLocations = new ArrayList<>();
@@ -36,6 +36,7 @@ public class Computer {
     Map<Integer, Travel> travels = new HashMap<>();
     ArrayList<String> landableLocations = new ArrayList<>();
     Map<Integer, Long> rocketBuiltTimes = new HashMap<>();
+    Map<Integer, Integer> unitsGoingToRockets = new HashMap<>();
     MapLocation base;
     Computer() {
         init();
@@ -121,29 +122,39 @@ public class Computer {
             }
 
             if (!unit.location().isInGarrison()) {
-                switch (unit.unitType()) {
-                    case Worker:
-                        moveDir = worker(unit);
-                        break;
-                    case Knight:
-                        break;
-                    case Ranger:
-                        break;
-                    case Mage:
-                        break;
-                    case Healer:
-                        break;
-                    case Factory:
-                        if (workerCount + workersInProgress < 2) {
-                            if (gc.canProduceRobot(unit.id(), UnitType.Worker)) {
-                                gc.produceRobot(unit.id(), UnitType.Worker);
-                            }
-                            if (gc.canUnload())
+                if (!unitsGoingToRockets.containsKey(unit.id())) {
+                    switch (unit.unitType()) {
+                        case Worker:
+                            moveDir = worker(unit);
+                            break;
+                        case Knight:
+                            break;
+                        case Ranger:
+                            break;
+                        case Mage:
+                            break;
+                        case Healer:
+                            break;
+                        case Factory:
+                            factory(unit);
+                            break;
+                        case Rocket:
+                            rocket(unit);
+                            break;
+                    }
+                }
+                else {
+                    Unit rocket = gc.unit(unitsGoingToRockets.get(unit.id()));
+                    if (gc.canLoad(rocket.id(), unit.id())) {
+                        gc.load(rocket.id(), unit.id());
+                        unitsGoingToRockets.remove(unit.id());
+                    }
+                    else {
+                        moveDir = unit.location().mapLocation().directionTo(rocket.location().mapLocation());
+                        if (moveDir == Direction.Center) {
+                            unitsGoingToRockets.remove(unit.id());
                         }
-                        break;
-                    case Rocket:
-                        rocket(unit);
-                        break;
+                    }
                 }
             }
 
@@ -164,11 +175,58 @@ public class Computer {
         gc.nextTurn();
     }
 
+    private void factory(Unit factory) {
+        UnitType robotToProduce = getRobotToProduceNext();
+        if (gc.canProduceRobot(factory.id(), robotToProduce)) {
+            gc.produceRobot(factory.id(), robotToProduce);
+        }
+        for (int i = 0; i < directions.size(); i++) {
+            if (gc.canUnload(factory.id(), directions.get(i)));
+        }
+    }
+
+    private UnitType getRobotToProduceNext() {
+        if (unitCounts.get(UnitType.Worker) + workersInProgress < 2) {
+            return UnitType.Worker;
+        }
+        Map<UnitType, Integer> odds = new LinkedHashMap<>();
+        double x;
+        double a = -1; // GRAPH: (x/c-a)/(x/c-b)
+        double b = -0.18;
+        double c = 40;
+        for (int i = 0; i < unitTypes.size(); i++) {
+            x = unitCounts.get(unitTypes.get(i));
+            if (unitTypes.get(i) == UnitType.Mage) {
+                // i dont like mages, but we'll see
+                odds.put(unitTypes.get(i), (int)Math.floor((x/c-a)/(x/c-b)) / 2);
+            }
+            else {
+                odds.put(unitTypes.get(i), (int) Math.floor((x / c - a) / (x / c - b)));
+            }
+        }
+        if (gettableKarboniteLocations.size() == 0) {
+            odds.put(UnitType.Worker, 0);
+        }
+        double completeWeight = 0.0;
+        for (UnitType key : odds.keySet()) {
+            completeWeight += odds.get(key);
+        }
+        double r = rand.nextDouble() * completeWeight;
+        double countWeight = 0.0;
+        for (UnitType key : odds.keySet()) {
+            countWeight += odds.get(key);
+            if (countWeight >= r) {
+                return key;
+            }
+        }
+        return UnitType.Worker;
+    }
+
     private void rocket(Unit rocket) {
         if (!rocketBuiltTimes.containsKey(rocket.id())) {
             rocketBuiltTimes.put(rocket.id(), gc.round());
         }
-        if (gc.planet() == Planet.Mars) {
+        if (rocket.rocketIsUsed() > 0.5) {
             if (rocket.structureGarrison().size() == 0) {
                 gc.disintegrateUnit(rocket.id());
             }
@@ -181,10 +239,37 @@ public class Computer {
             }
         }
         else {
-            //if (rocket.structureGarrison().size() == 8 || gc.round() == EARTH_DEATH - 1) {
-            if (gc.round() - rocketBuiltTimes.get(rocket.id()) > ROCKET_LAUNCH_TURNS || gc.round() == EARTH_DEATH - 1) {
+            VecUnit units = gc.myUnits();
+            ArrayList<Integer> unitsToBoard = new ArrayList<>();
+            int workerCount = 0;
+            for (int i = 0; i < units.size(); i++) {
+                if (unitsToBoard.size() == rocket.structureMaxCapacity() + 1) {
+                    break;
+                }
+                if (units.get(i).unitType() == UnitType.Factory || units.get(i).unitType() == UnitType.Healer || units.get(i).unitType() == UnitType.Rocket || units.get(i).unitType() == UnitType.Mage) {
+                    continue;
+                }
+                if (units.get(i).unitType() == UnitType.Worker) {
+                    WorkerTask t = workerTaskMap.get(units.get(i).id());
+                    if (t != WorkerTask.START_BUILD_FACTORY && t != WorkerTask.START_BUILD_ROCKET && workerCount < 3) {
+                        unitsToBoard.add(units.get(i).id());
+                        workerCount++;
+                    }
+                    continue;
+                }
+                unitsToBoard.add(units.get(i).id());
+            }
+            for (int i = 0; i < unitsToBoard.size(); i++) {
+                unitsGoingToRockets.put(unitsToBoard.get(i), rocket.id());
+            }
+            if (gc.round() - rocketBuiltTimes.get(rocket.id()) > ROCKET_LAUNCH_TURNS || gc.round() == EARTH_DEATH - 1 || rocket.structureGarrison().size() == rocket.structureMaxCapacity()) {
                 MapLocation destination = decryptMapLocation(landableLocations.get(rand.nextInt(landableLocations.size())));
                 if (gc.canLaunchRocket(rocket.id(), destination)) {
+                    for (Integer unit : unitsGoingToRockets.keySet()) {
+                        if (unitsGoingToRockets.get(unit) == rocket.id()) {
+                            unitsGoingToRockets.remove(unit);
+                        }
+                    }
                     gc.launchRocket(rocket.id(), destination);
                     for (int i = 0; i < directions.size(); i++) {
                         try {
@@ -295,6 +380,7 @@ public class Computer {
     }
 
     private boolean tooManyWorkers() {
+        int workerCount = unitCounts.get(UnitType.Worker);
         if (gc.planet() == Planet.Mars) {
             if (gc.round() > 750) {
                 return true;
@@ -446,11 +532,11 @@ public class Computer {
 
     private void updateEnemyUnitsAndStructures() {
         factoriesInProgress = 0;
-        factoryCount = 0;
         rocketsInProgress = 0;
-        rocketCount = 0;
         workersInProgress = 0;
-        workerCount = 0;
+        for (int i = 0; i < unitTypes.size(); i++) {
+            unitCounts.put(unitTypes.get(i), 0);
+        }
         VecUnit units = gc.units();
         structuresInProgress = new ArrayList<>();
         for (int i = 0; i < units.size(); i++) {
@@ -458,25 +544,21 @@ public class Computer {
                 enemyUnits.put(units.get(i).id(), units.get(i));
                 continue;
             }
+            unitCounts.put(units.get(i).unitType(), unitCounts.get(units.get(i).unitType()) + 1);
             switch (units.get(i).unitType()) {
                 case Factory:
                     if (units.get(i).structureIsBuilt() < 0.5) {
                         factoriesInProgress++;
                         structuresInProgress.add(units.get(i).id());
-                    } else {
-                        factoryCount++;
+                        unitCounts.put(units.get(i).unitType(), unitCounts.get(units.get(i).unitType()) - 1);
                     }
                     break;
                 case Rocket:
                     if (units.get(i).structureIsBuilt() < 0.5) {
                         rocketsInProgress++;
                         structuresInProgress.add(units.get(i).id());
-                    } else {
-                        rocketCount++;
+                        unitCounts.put(units.get(i).unitType(), unitCounts.get(units.get(i).unitType()) - 1);
                     }
-                    break;
-                case Worker:
-                    workerCount++;
                     break;
             }
         }
@@ -492,11 +574,11 @@ public class Computer {
         if (gc.karbonite() < KARBONITE_SHORTAGE && gettableKarboniteLocations.size() != 0) {
             return WorkerTask.HARVEST;
         }
-        if (gc.round() * FACTORY_SHORTAGE_COEFF > factoryCount + factoriesInProgress) {
+        if (gc.round() * FACTORY_SHORTAGE_COEFF > unitCounts.get(UnitType.Factory) + factoriesInProgress) {
             factoriesInProgress++;
             return WorkerTask.START_BUILD_FACTORY;
         }
-        if (gc.researchInfo().getLevel(UnitType.Rocket) != 0 && gc.round() * ROCKET_SHORTAGE_COEFF > rocketCount + rocketsInProgress) {
+        if (gc.researchInfo().getLevel(UnitType.Rocket) != 0 && gc.round() * ROCKET_SHORTAGE_COEFF > unitCounts.get(UnitType.Rocket) + rocketsInProgress) {
             rocketsInProgress++;
             return WorkerTask.START_BUILD_ROCKET;
         }
