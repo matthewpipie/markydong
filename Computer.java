@@ -130,16 +130,16 @@ public class Computer {
                             moveDir = worker(unit);
                             break;
                         case Knight:
-			    moveDir = knight(unit);
+                            moveDir = knight(unit);
                             break;
                         case Ranger:
-			    moveDir = ranger(unit);
+                            moveDir = ranger(unit);
                             break;
                         case Mage:
-			    moveDir = mage(unit);
+                            moveDir = mage(unit);
                             break;
                         case Healer:
-			    moveDir = healer(unit);
+                            moveDir = healer(unit);
                             break;
                         case Factory:
                             factory(unit);
@@ -184,32 +184,32 @@ public class Computer {
         gc.nextTurn();
     }
 
-    private void knight(Unit knight) {
+    private Direction knight(Unit knight) {
 	if (!targets.containsKey(knight.id()) {
 	    targets.put(knight.id(), getNewKnightTarget(knight));
 	}
 	Unit target = targets.get(knight.id());
 	Direction moveDir = (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > 1) ? knight.location().mapLocation().directionTo(target.location().mapLocation()) : Direction.Center;
-	if (gc.isAttackReady(knight.id()) {
-	    for {int i = 0; i < enemyUnits.size(); i++) {
-	        if (enemyUnits.get(i).isInSpace() || enemyUnits.get(i).isInGarrison()) continue;
-		if (gc.canAttack(knight.id(), enemyUnits.get(i).id())) {
-		    gc.attack(knight.id(), enemyUnits.get(i).id());
-		}
-	    }
-	}
+	if (gc.isAttackReady(knight.id())) {
+        for (int i = 0; i < enemyUnits.size(); i++) {
+            if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
+            if (gc.canAttack(knight.id(), enemyUnits.get(i).id())) {
+                gc.attack(knight.id(), enemyUnits.get(i).id());
+            }
+        }
+    }
 	return moveDir;
     }
     private int getNewKnightTarget(Unit knight) {
 	UnitType restrictTo = null;
 	Unit target = null;
-	for {int i = 0; i < enemyUnits.size(); i++) {
-	    if (enemyUnits.get(i).isInSpace() || enemyUnits.get(i).isInGarrison()) continue;
+	for (int i = 0; i < enemyUnits.size(); i++) {
+	    if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
 	    if (enemyUnits.get(i).unitType() == UnitType.Healer && enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) < 60) {
 		    restrictTo = UnitType.Healer;
 	    }
 	    if (restrictTo == UnitType.Healer) {
-		    if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation() > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()))) {
+		    if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
 			target = enemyUnits.get(i);
 		    }
 	    }
@@ -218,20 +218,20 @@ public class Computer {
 		    restrictTo = UnitType.Ranger;
 		}
 	    }
-	    if (restrictTo == UnitType.Ranger) { TODO
-		    if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation() > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()))) {
+	    if (restrictTo == UnitType.Ranger) { //TODO
+		    if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
 			target = enemyUnits.get(i);
 		    }
 	    }
 	}
     }
-    private void ranger(Unit ranger) {
+    private Direction ranger(Unit ranger) {
 
     }
-    private void mage(Unit mage) {
+    private Direction mage(Unit mage) {
 
     }
-    private void healer(Unit healer) {
+    private Direction healer(Unit healer) {
 
     }
 
