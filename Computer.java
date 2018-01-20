@@ -1,6 +1,5 @@
 import bc.*;
 
-import java.lang.ref.PhantomReference;
 import java.util.*;
 
 public class Computer {
@@ -39,6 +38,7 @@ public class Computer {
     ArrayList<String> landableLocations = new ArrayList<>();
     Map<Integer, Long> rocketBuiltTimes = new HashMap<>();
     Map<Integer, Integer> unitsGoingToRockets = new HashMap<>();
+    Map<Integer, Integer> targets = new HashMap<>();
     MapLocation base;
     Computer() {
         init();
@@ -185,54 +185,66 @@ public class Computer {
     }
 
     private Direction knight(Unit knight) {
-	if (!targets.containsKey(knight.id()) {
-	    targets.put(knight.id(), getNewKnightTarget(knight));
-	}
-	Unit target = targets.get(knight.id());
-	Direction moveDir = (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > 1) ? knight.location().mapLocation().directionTo(target.location().mapLocation()) : Direction.Center;
-	if (gc.isAttackReady(knight.id())) {
-        for (int i = 0; i < enemyUnits.size(); i++) {
-            if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
-            if (gc.canAttack(knight.id(), enemyUnits.get(i).id())) {
-                gc.attack(knight.id(), enemyUnits.get(i).id());
+        if (!targets.containsKey(knight.id())) {
+            targets.put(knight.id(), getNewKnightTarget(knight));
+        }
+        Unit target;
+        try {
+            target = gc.unit(targets.get(knight.id()));
+        } catch (Exception e) {
+            target = enemyUnits.get(targets.get(knight.id()));
+            // IMPORTANT TODO: make enemyUnits clear out a unit if it isnt seen for X turns
+        }
+        Direction moveDir = (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > 1) ? knight.location().mapLocation().directionTo(target.location().mapLocation()) : Direction.Center;
+        if (gc.isAttackReady(knight.id())) {
+            for (int i = 0; i < enemyUnits.size(); i++) {
+                if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
+                if (gc.canAttack(knight.id(), enemyUnits.get(i).id())) {
+                    gc.attack(knight.id(), enemyUnits.get(i).id());
+                }
             }
         }
-    }
-	return moveDir;
+        return moveDir;
     }
     private int getNewKnightTarget(Unit knight) {
-	UnitType restrictTo = null;
-	Unit target = null;
-	for (int i = 0; i < enemyUnits.size(); i++) {
-	    if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
-	    if (enemyUnits.get(i).unitType() == UnitType.Healer && enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) < 60) {
-		    restrictTo = UnitType.Healer;
-	    }
-	    if (restrictTo == UnitType.Healer) {
-		    if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
-			target = enemyUnits.get(i);
-		    }
-	    }
-	    if (restrictTo != UnitType.Healer) {
-	        if (enemyUnits.get(i).unitType() == UnitType.Ranger && enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) < 50) {
-		    restrictTo = UnitType.Ranger;
-		}
-	    }
-	    if (restrictTo == UnitType.Ranger) { //TODO
-		    if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
-			target = enemyUnits.get(i);
-		    }
-	    }
-	}
+        UnitType restrictTo = null;
+        Unit target = null;
+        for (int i = 0; i < enemyUnits.size(); i++) {
+            if (enemyUnits.get(i).location().isInSpace() || enemyUnits.get(i).location().isInGarrison()) continue;
+            if (enemyUnits.get(i).unitType() == UnitType.Healer && enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) < 60) {
+                restrictTo = UnitType.Healer;
+            }
+            if (restrictTo == UnitType.Healer && enemyUnits.get(i).unitType() == UnitType.Healer) {
+                if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
+                    target = enemyUnits.get(i);
+                }
+            }
+            if (restrictTo != UnitType.Healer) {
+                if (enemyUnits.get(i).unitType() == UnitType.Ranger && enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) < 50) {
+                    restrictTo = UnitType.Ranger;
+                }
+            }
+            if (restrictTo == UnitType.Ranger && enemyUnits.get(i).unitType() == UnitType.Ranger) {
+                if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
+                    target = enemyUnits.get(i);
+                }
+            }
+            if (restrictTo == null) {
+                if (target.location().mapLocation().distanceSquaredTo(knight.location().mapLocation()) > enemyUnits.get(i).location().mapLocation().distanceSquaredTo(knight.location().mapLocation())) {
+                    target = enemyUnits.get(i);
+                }
+            }
+        }
+        return target.id();
     }
     private Direction ranger(Unit ranger) {
-
+        return getRandomDir(true);
     }
     private Direction mage(Unit mage) {
-
+        return getRandomDir(true);
     }
     private Direction healer(Unit healer) {
-
+        return getRandomDir(true);
     }
 
     private void factory(Unit factory) {
